@@ -235,19 +235,29 @@ export class TextToTrello {
       item.title = item.title.replace(/\[.*?\]/, '').trim();
     }
 
-    // Öncelik belirle
-    if (/acil|urgent|kritik|önemli/i.test(line)) {
+    // Öncelik belirle (metindeki son kelime genelde öncelik)
+    if (/kritik|critical/i.test(line)) {
+      item.priority = 'kritik';
+      item.labels.push('kritik');
+    } else if (/yüksek|high|acil|urgent|önemli/i.test(line)) {
       item.priority = 'yüksek';
-      item.labels.push('yüksek öncelik');
+      item.labels.push('yüksek');
+    } else if (/normal|medium|orta/i.test(line)) {
+      item.priority = 'normal';
+      item.labels.push('normal');
     } else if (/düşük|low|sonra/i.test(line)) {
       item.priority = 'düşük';
-      item.labels.push('düşük öncelik');
+      item.labels.push('düşük');
     }
 
-    // Atama yap (@kullanıcı)
-    const assigneeMatch = line.match(/@(\w+)/);
-    if (assigneeMatch) {
-      item.assignee = assigneeMatch[1];
+    // Atamalar yap (@kullanıcı) - birden fazla olabilir
+    const assigneeMatches = line.match(/@\w+/g);
+    if (assigneeMatches) {
+      // @ işaretini kaldır ve liste olarak sakla
+      item.assignees = assigneeMatches.map(a => a.substring(1));
+      // Geriye uyumluluk için ilkini assignee olarak da sakla
+      item.assignee = item.assignees[0];
+      console.log(`  📌 Tespit edilen atamalar: ${assigneeMatches.join(', ')}`);
     }
 
     // Liste belirle
@@ -313,8 +323,27 @@ export class TextToTrello {
       labels: item.labels || []
     };
 
-    // Atama yap
-    if (item.assignee) {
+    // Atamalar yap (birden fazla olabilir)
+    if (item.assignees && item.assignees.length > 0) {
+      const memberIds = [];
+      const assignedNames = [];
+      
+      for (const assigneeName of item.assignees) {
+        const member = await this.trelloManager.findMemberByName(this.boardId, assigneeName);
+        if (member) {
+          memberIds.push(member.id);
+          assignedNames.push(member.fullName);
+        } else {
+          console.log(`  ⚠️ Kullanıcı bulunamadı: @${assigneeName}`);
+        }
+      }
+      
+      if (memberIds.length > 0) {
+        cardData.memberIds = memberIds;
+        console.log(`  👤 Atananlar: ${assignedNames.join(', ')}`);
+      }
+    } else if (item.assignee) {
+      // Tek atama (geriye uyumluluk)
       const member = await this.trelloManager.findMemberByName(this.boardId, item.assignee);
       if (member) {
         cardData.memberIds = [member.id];

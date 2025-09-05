@@ -108,14 +108,61 @@ export class TrelloManager {
     try {
       const members = await this.makeRequest('GET', `/boards/${boardId}/members`);
       
-      // Tam ad, kullanıcı adı veya kısmi eşleşme ara
-      const member = members.find(m => 
-        m.fullName.toLowerCase().includes(memberName.toLowerCase()) ||
-        m.username.toLowerCase().includes(memberName.toLowerCase()) ||
-        m.fullName.toLowerCase().split(' ').some(part => 
-          part.startsWith(memberName.toLowerCase())
-        )
-      );
+      // Debug için mevcut üyeleri logla
+      if (members.length === 0) {
+        console.log(`  ⚠️ Panoda hiç üye yok!`);
+        return null;
+      }
+      
+      console.log(`  🔍 Panodaki üyeler (${members.length}): ${members.map(m => `@${m.username}`).join(', ')}`);
+      console.log(`  🔍 Aranan kullanıcı: @${memberName}`);
+      
+      // Kullanıcı adı haritaları (sizin projenize özel)
+      const userMappings = {
+        'ziyaeyuboglu': ['ziya', 'ziyaeyuboglu', 'ziyaeyu'],
+        'infoalieweb3': ['berkay', 'infoalieweb3', 'infoalie', 'alieweb3'],
+        'alkannakliyat': ['tuncer', 'alkannakliyat', 'alkann']
+      };
+      
+      // Önce haritalarda ara
+      let targetUsername = memberName.toLowerCase();
+      for (const [actualUsername, aliases] of Object.entries(userMappings)) {
+        if (aliases.includes(memberName.toLowerCase())) {
+          targetUsername = actualUsername;
+          console.log(`  🔄 Haritalama bulundu: ${memberName} -> ${actualUsername}`);
+          break;
+        }
+      }
+      
+      // Tam eşleşme önce (username)
+      let member = members.find(m => m.username.toLowerCase() === targetUsername);
+      
+      // Username bulunamazsa fullName'de ara
+      if (!member) {
+        member = members.find(m => 
+          m.fullName && (
+            m.fullName.toLowerCase() === targetUsername ||
+            m.fullName.toLowerCase().includes(targetUsername)
+          )
+        );
+      }
+      
+      // Hala bulunamazsa kısmi eşleşme dene
+      if (!member) {
+        member = members.find(m => 
+          m.username.toLowerCase().includes(targetUsername) ||
+          (m.fullName && m.fullName.toLowerCase().split(' ').some(part => 
+            part.startsWith(targetUsername)
+          ))
+        );
+      }
+      
+      if (member) {
+        console.log(`  ✅ Eşleşme bulundu: @${memberName} -> @${member.username} (${member.fullName || 'Ad yok'})`);
+      } else {
+        console.log(`  ❌ Eşleşme bulunamadı: @${memberName}`);
+        console.log(`     💡 İpucu: Trello'da bu kullanıcıları panonuza eklemeyi unutmayın!`);
+      }
       
       return member || null;
     } catch (error) {
