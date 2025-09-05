@@ -868,27 +868,51 @@ Gemini AI otomatik düzenler!</pre>
             const tasks = [];
             let currentTask = null;
             
+            const priorityRegex = /(kritik|yüksek|yuksek|normal|düşük|dusuk)/i;
+            
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (!trimmed) continue;
                 
                 // Check for task markers
-                if (/^(GÖREV|PROJE|ARAŞTIRMA|TODO|TASK):/i.test(trimmed)) {
+                const markerMatch = trimmed.match(/^(GÖREV|PROJE|ARAŞTIRMA|TODO|TASK):\s*(.*)$/i);
+                if (markerMatch) {
                     if (currentTask) tasks.push(currentTask);
+                    const raw = markerMatch[2];
+                    const assignees = (raw.match(/@\w+/g) || []).map(a => a.substring(1));
+                    const priorityMatch = raw.match(priorityRegex);
+                    const priority = priorityMatch ? priorityMatch[1].toLowerCase().replace('yuksek','yüksek').replace('dusuk','düşük') : null;
+                    
+                    // Temiz başlık
+                    let cleanTitle = raw
+                        .replace(/@\w+/g, '')
+                        .replace(priorityRegex, '')
+                        .replace(/\s{2,}/g, ' ')
+                        .trim();
+                    
+                    // Etiketler
+                    const typeLabel = markerMatch[1].toLowerCase(); // görev, proje, araştırma
+                    const labels = [typeLabel];
+                    if (priority) labels.push(priority);
+                    
                     currentTask = {
-                        title: trimmed.replace(/^[^:]+:\s*/, ''),
+                        title: cleanTitle,
                         description: '',
-                        priority: /kritik|acil/i.test(trimmed) ? 'high' : 'normal'
+                        assignees,
+                        labels,
+                        priority: priority || 'normal'
                     };
                 } else if (currentTask && trimmed.startsWith('-')) {
                     currentTask.description += '\n' + trimmed;
                 } else if (currentTask) {
                     currentTask.description += '\n' + trimmed;
                 } else {
-                    // Treat as a simple task
+                    // Serbest metin satırı yeni görev olarak yorumlanır
                     tasks.push({
                         title: trimmed,
                         description: '',
+                        assignees: [],
+                        labels: [],
                         priority: 'normal'
                     });
                 }
@@ -899,23 +923,34 @@ Gemini AI otomatik düzenler!</pre>
         }
 
         async function createTrelloCard(task, config) {
-            const response = await fetch(`https://api.trello.com/1/cards`, {
+            const listId = await getFirstListId(config);
+            const memberIds = await getMemberIdsByUsernames(config, task.assignees || []);
+            const labelIds = await getOrCreateLabelIds(config, task.labels || []);
+            
+            const res = await fetch(`https://api.trello.com/1/cards`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     key: config.apiKey,
                     token: config.token,
-                    idList: await getFirstListId(config),
+                    idList: listId,
                     name: task.title,
-                    desc: task.description
+                    desc: task.description,
+                    idMembers: memberIds.join(',')
                 })
             });
+            if (!res.ok) throw new Error('Kart oluşturulamadı');
+            const card = await res.json();
             
-            if (!response.ok) {
-                throw new Error('Kart oluşturulamadı');
+            for (const labelId of labelIds) {
+                await fetch(`https://api.trello.com/1/cards/${card.id}/idLabels`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: config.apiKey, token: config.token, value: labelId })
+                });
             }
             
-            return await response.json();
+            return card;
         }
 
         async function getFirstListId(config) {
@@ -924,6 +959,64 @@ Gemini AI otomatik düzenler!</pre>
             );
             const lists = await response.json();
             return lists[0]?.id;
+        }
+
+        async function getBoardMembers(config) {
+            const res = await fetch(`https://api.trello.com/1/boards/${config.boardId}/members?key=${config.apiKey}&token=${config.token}`);
+            if (!res.ok) return [];
+            return res.json();
+        }
+
+        async function getMemberIdsByUsernames(config, usernames) {
+            if (!usernames || usernames.length === 0) return [];
+            const members = await getBoardMembers(config);
+            const ids = [];
+            const mapAliases = {
+                'ziyaeyuboglu': ['ziya', 'ziyaeyu'],
+                'infoalieweb3': ['berkay', 'infoalie', 'alieweb3'],
+                'alkannakliyat': ['tuncer', 'alkann']
+            };
+            for (const u of usernames) {
+                let target = u.toLowerCase();
+                for (const [actual, aliases] of Object.entries(mapAliases)) {
+                    if (actual === target || aliases.includes(target)) { target = actual; break; }
+                }
+                const m = members.find(mm => mm.username.toLowerCase() === target || (mm.fullName && mm.fullName.toLowerCase().includes(target)));
+                if (m) ids.push(m.id);
+            }
+            return Array.from(new Set(ids));
+        }
+
+        function pickLabelColor(name) {
+            const n = name.toLowerCase();
+            if (n.includes('kritik')) return 'red';
+            if (n.includes('yüksek') || n.includes('yuksek')) return 'orange';
+            if (n.includes('normal')) return 'blue';
+            if (n.includes('düşük') || n.includes('dusuk')) return 'black';
+            if (n.includes('proje')) return 'sky';
+            if (n.includes('araştırma') || n.includes('arastirma')) return 'purple';
+            if (n.includes('görev') || n.includes('gorev')) return 'green';
+            return 'grey';
+        }
+
+        async function getOrCreateLabelIds(config, labelNames) {
+            if (!labelNames || labelNames.length === 0) return [];
+            const res = await fetch(`https://api.trello.com/1/boards/${config.boardId}/labels?key=${config.apiKey}&token=${config.token}`);
+            const existing = res.ok ? await res.json() : [];
+            const ids = [];
+            for (const ln of Array.from(new Set(labelNames))) {
+                let label = existing.find(l => l.name && l.name.toLowerCase() === ln.toLowerCase());
+                if (!label) {
+                    const createRes = await fetch(`https://api.trello.com/1/labels`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: config.apiKey, token: config.token, name: ln, color: pickLabelColor(ln), idBoard: config.boardId })
+                    });
+                    if (createRes.ok) label = await createRes.json();
+                }
+                if (label) ids.push(label.id);
+            }
+            return ids;
         }
 
         function displayResults(results) {
