@@ -1,0 +1,29 @@
+{
+  "name": "trello-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP sunucusu ile Trello entegrasyonu - Doğal dil komutlarıyla görev atama sistemi",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test.js",
+    "text-to-trello": "node text-to-trello.js"
+  },
+  "keywords": ["mcp", "trello", "automation", "task-assignment", "turkish"],
+  "author": "TT",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "axios": "^1.6.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "passport": "^0.7.0",
+    "passport-oauth2": "^1.7.0",
+    "express-session": "^1.17.3",
+    "@google/generative-ai": "^0.1.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

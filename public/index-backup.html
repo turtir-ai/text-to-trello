@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text to Trello - Akıllı Görev Yönetimi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-card {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .main-card {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .input-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-label {
+            font-size: 1.2em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        textarea {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1em;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 400px;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .format-guide {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-y: auto;
+            max-height: 600px;
+        }
+
+        .format-guide h3 {
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+        }
+
+        .format-guide h3::before {
+            content: '💡';
+            margin-right: 8px;
+        }
+
+        .format-section {
+            margin-bottom: 20px;
+        }
+
+        .format-section h4 {
+            font-size: 1em;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .format-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .format-list li {
+            padding: 5px 0;
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .format-list code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #d63384;
+        }
+
+        .example-box {
+            background: #e7f3ff;
+            border-left: 4px solid #667eea;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .example-box h4 {
+            font-size: 0.95em;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .example-box pre {
+            margin: 0;
+            font-size: 0.85em;
+            color: #555;
+            white-space: pre-wrap;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .tips-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 10px;
+        }
+
+        .tips-list li {
+            padding: 8px;
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 5px;
+            display: flex;
+            align-items: start;
+            font-size: 0.9em;
+        }
+
+        .tips-list li::before {
+            content: '✓';
+            color: #28a745;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .templates {
+            margin-top: 20px;
+        }
+
+        .templates h4 {
+            font-size: 1em;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .template-buttons {
+            display: grid;
+            gap: 10px;
+        }
+
+        .template-btn {
+            padding: 10px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .template-btn:hover {
+            border-color: #667eea;
+            background: #f8f9fa;
+        }
+
+        .template-btn strong {
+            display: block;
+            color: #333;
+            margin-bottom: 3px;
+        }
+
+        .template-btn span {
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .results-header h3 {
+            font-size: 1.3em;
+            color: #333;
+        }
+
+        .results-stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+
+        .stat-badge.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .stat-badge.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .result-item {
+            background: #f8f9fa;
+            border-left: 4px solid #28a745;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .result-item.error {
+            border-left-color: #dc3545;
+        }
+
+        .result-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .result-link {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .result-link:hover {
+            text-decoration: underline;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+
+        .warning-box strong {
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 Text to Trello</h1>
+            <p>Projelerinizi ve görevlerinizi akıllı bir şekilde Trello'ya aktarın</p>
+        </div>
+
+        <div class="main-card">
+            <div class="input-section">
+                <label class="input-label" for="textInput">
+                    Görevlerinizi aşağıdaki formatta yazın:
+                </label>
+                <textarea id="textInput" placeholder="GÖREV: Web sitesi yenileme projesi @emre
+  Modern ve responsive bir tasarım hazırlanacak
+  - Ana sayfa tasarımı
+  - Ürün sayfası şablonu
+  - İletişim formu entegrasyonu
+
+ARAŞTIRMA: AI araçları karşılaştırması @ali kritik
+  Mevcut AI araçlarının detaylı analizi yapılacak
+
+PROJE: Mobil uygulama geliştirme
+  React Native ile cross-platform uygulama"></textarea>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" id="processBtn">
+                        🚀 Görevleri Oluştur
+                    </button>
+                    <button class="btn btn-secondary" id="clearBtn">
+                        Temizle
+                    </button>
+                </div>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Görevler oluşturuluyor...</p>
+                </div>
+
+                <div class="results-section" id="results">
+                    <div class="results-header">
+                        <h3>📊 Sonuçlar</h3>
+                        <div class="results-stats">
+                            <span class="stat-badge success" id="successCount">0 Başarılı</span>
+                            <span class="stat-badge error" id="errorCount">0 Hata</span>
+                        </div>
+                    </div>
+                    <div id="resultsList"></div>
+                </div>
+            </div>
+
+            <div class="format-guide">
+                <h3>Görev Formatı Rehberi</h3>
+                
+                <div class="format-section">
+                    <h4>📝 Ana Görev Tanımları</h4>
+                    <ul class="format-list">
+                        <li><code>GÖREV:</code> Genel görevler için</li>
+                        <li><code>PROJE:</code> Proje tanımları için</li>
+                        <li><code>ARAŞTIRMA:</code> Araştırma görevleri için</li>
+                        <li><code>TODO:</code> Yapılacaklar için</li>
+                        <li><code>TASK:</code> İngilizce görevler için</li>
+                    </ul>
+                </div>
+
+                <div class="format-section">
+                    <h4>🎯 Özellik Ekleme</h4>
+                    <ul class="format-list">
+                        <li><strong>Atama:</strong> <code>@kullaniciadi</code></li>
+                        <li><strong>Öncelik:</strong> <code>kritik</code>, <code>acil</code>, <code>düşük</code></li>
+                        <li><strong>Liste:</strong> <code>yapılacak</code>, <code>yapılıyor</code>, <code>tamamlandı</code></li>
+                        <li><strong>Alt görevler:</strong> <code>-</code>, <code>•</code> veya <code>*</code> ile başlatın</li>
+                    </ul>
+                </div>
+
+                <div class="example-box">
+                    <h4>📌 Örnek Kullanım:</h4>
+                    <pre>GÖREV: Landing page tasarımı @designer kritik
+  Modern ve kullanıcı dostu bir tasarım hazırlanacak
+  - Wireframe çizimi
+  - UI/UX tasarımı  
+  - Responsive düzenlemeler
+
+ARAŞTIRMA: Rakip analizi @analyst
+  Sektördeki rakiplerin detaylı incelemesi
+  - Fiyatlandırma stratejileri
+  - Özellik karşılaştırması</pre>
+                </div>
+
+                <ul class="tips-list">
+                    <li>Her ana görev yeni satırda başlamalıdır</li>
+                    <li>Açıklamalar görev satırından sonra girintili yazılır</li>
+                    <li>Alt görevler tire ile listelenir</li>
+                    <li>Boş satırlarla görevleri ayırabilirsiniz</li>
+                </ul>
+
+                <div class="warning-box">
+                    <strong>⚠️ Önemli:</strong> Sadece yukarıdaki etiketlerle başlayan satırlar görev olarak algılanır. Normal metin satırları görev oluşturmaz.
+                </div>
+
+                <div class="templates">
+                    <h4>🎨 Hazır Şablonlar</h4>
+                    <div class="template-buttons">
+                        <button class="template-btn" onclick="loadTemplate('sprint')">
+                            <strong>Sprint Planı</strong>
+                            <span>Haftalık sprint görevleri</span>
+                        </button>
+                        <button class="template-btn" onclick="loadTemplate('research')">
+                            <strong>Araştırma Projesi</strong>
+                            <span>Detaylı araştırma görevleri</span>
+                        </button>
+                        <button class="template-btn" onclick="loadTemplate('development')">
+                            <strong>Yazılım Geliştirme</strong>
+                            <span>Development cycle görevleri</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const templates = {
+            sprint: `GÖREV: Sprint Planning Meeting @scrum_master
+  Haftalık sprint planlaması yapılacak
+  - Backlog gözden geçirme
+  - Story point tahmini
+  - Sprint hedefleri belirleme
+
+GÖREV: Backend API Development @backend_dev kritik
+  Kullanıcı yönetimi API'leri geliştirilecek
+  - Authentication endpoint
+  - User CRUD operasyonları
+  - Role-based access control
+
+GÖREV: Frontend Dashboard @frontend_dev
+  Admin dashboard arayüzü tasarlanacak
+  - Responsive layout
+  - Chart entegrasyonu
+  - Real-time data update`,
+
+            research: `ARAŞTIRMA: Pazar Analizi @analyst kritik
+  Hedef pazarın detaylı analizi yapılacak
+  - Pazar büyüklüğü hesaplama
+  - Rakip analizi
+  - Müşteri segmentasyonu
+  - SWOT analizi
+
+ARAŞTIRMA: Teknoloji Stack Araştırması @tech_lead
+  Proje için en uygun teknolojiler belirlenecek
+  - Framework karşılaştırması
+  - Database seçimi
+  - Cloud platform değerlendirmesi
+
+ARAŞTIRMA: Kullanıcı Deneyimi Araştırması @ux_designer
+  Kullanıcı davranışları ve beklentileri analiz edilecek
+  - User journey mapping
+  - Persona oluşturma
+  - A/B test senaryoları`,
+
+            development: `PROJE: E-Ticaret Platform Geliştirme
+  Modern bir e-ticaret platformu geliştirilecek
+
+GÖREV: Database Tasarımı @db_admin kritik
+  - Tablo yapıları oluşturma
+  - İndeks optimizasyonu
+  - Backup stratejisi belirleme
+
+GÖREV: Payment Gateway Entegrasyonu @backend_dev kritik
+  - API entegrasyonu
+  - Test ortamı kurulumu
+  - Güvenlik testleri
+
+GÖREV: Ürün Listeleme Sayfası @frontend_dev
+  - Filtreleme özellikleri
+  - Sıralama seçenekleri
+  - Pagination implementasyonu
+
+GÖREV: Test Senaryoları @qa_engineer
+  - Unit test yazımı
+  - Integration testleri
+  - User acceptance testleri`
+        };
+
+        function loadTemplate(templateName) {
+            const textInput = document.getElementById('textInput');
+            textInput.value = templates[templateName];
+            textInput.scrollTop = 0;
+        }
+
+        document.getElementById('processBtn').addEventListener('click', async () => {
+            const text = document.getElementById('textInput').value.trim();
+            
+            if (!text) {
+                alert('Lütfen görev metni girin!');
+                return;
+            }
+
+            const processBtn = document.getElementById('processBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const resultsList = document.getElementById('resultsList');
+
+            processBtn.disabled = true;
+            loading.classList.add('active');
+            results.classList.remove('active');
+            resultsList.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/text-to-trello', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ text })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    let successCount = 0;
+                    let errorCount = 0;
+
+                    data.results.forEach(result => {
+                        const resultDiv = document.createElement('div');
+                        resultDiv.className = result.success ? 'result-item' : 'result-item error';
+                        
+                        if (result.success) {
+                            successCount++;
+                            resultDiv.innerHTML = `
+                                <div class="result-title">✅ ${result.item.title}</div>
+                                <a href="${result.card.url}" target="_blank" class="result-link">
+                                    Trello'da Görüntüle →
+                                </a>
+                            `;
+                        } else {
+                            errorCount++;
+                            resultDiv.innerHTML = `
+                                <div class="result-title">❌ ${result.item?.title || 'Hata'}</div>
+                                <div style="color: #666; font-size: 0.9em;">${result.error}</div>
+                            `;
+                        }
+                        
+                        resultsList.appendChild(resultDiv);
+                    });
+
+                    document.getElementById('successCount').textContent = `${successCount} Başarılı`;
+                    document.getElementById('errorCount').textContent = `${errorCount} Hata`;
+
+                    results.classList.add('active');
+                } else {
+                    alert(`Hata: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('İstek hatası:', error);
+                alert('Bir hata oluştu. Lütfen tekrar deneyin.');
+            } finally {
+                loading.classList.remove('active');
+                processBtn.disabled = false;
+            }
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            document.getElementById('textInput').value = '';
+            document.getElementById('results').classList.remove('active');
+        });
+    </script>
+</body>
+</html>

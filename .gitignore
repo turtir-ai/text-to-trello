@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Production
+/build
+/dist
+
+# Testing
+coverage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# OS Files
+Thumbs.db
+desktop.ini
+
+# Backup files
+*.backup
+*.bak
+*-old.*
+
+# Test files
+test-*.txt
+test-*.js
+!test.js
+
+# Cache
+.cache/
+.vercel/
