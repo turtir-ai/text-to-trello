@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -6,19 +6,19 @@ dotenv.config();
 export class GeminiManager {
   constructor() {
     this.apiKey = process.env.GEMINI_API_KEY;
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+    // Default model and soft fallback to lite for bulk workloads
+    this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     this.isConfigured = false;
-    
+
     if (!this.apiKey || this.apiKey === 'your_gemini_api_key_here') {
       console.log('⚠️ Gemini API key yapılandırılmamış - AI özelliği devre dışı');
       return;
     }
-    
+
     try {
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
-      this.model = this.genAI.getGenerativeModel({ model: this.modelName });
+      this.client = new GoogleGenerativeAI({ apiKey: this.apiKey });
       this.isConfigured = true;
-      console.log('✅ Gemini AI bağlantısı hazır - HER ZAMAN AKTİF');
+      console.log(`✅ Gemini AI bağlantısı hazır (model: ${this.modelName})`);
     } catch (error) {
       console.error('❌ Gemini AI başlatma hatası:', error.message);
     }
@@ -32,7 +32,8 @@ export class GeminiManager {
   }
 
   /**
-   * Metni analiz edip Trello görev formatına dönüştürür
+   * Metni analiz edip Trello görev formatına dönüştürür (plan metni üretimi için)
+   * Not: Yapısal JSON için generateTasksWithSchema kullanılır.
    */
   async processAndEnhanceText(text) {
     if (!this.isConfigured) {
@@ -43,58 +44,110 @@ export class GeminiManager {
     const prompt = `
 Sen bir proje yöneticisi asistanısın. Aşağıdaki metni analiz edip Trello görev kartlarına dönüştür.
 
-ÖNEMLİ KURALLAR:
+KURALLAR:
 1. HER ANA BAŞLIĞI MUTLAKA "PROJE:", "ARAŞTIRMA:", "GÖREV:", "TODO:" veya "TASK:" ile başlat
 2. Normal metin satırlarını GÖREV YAPMA, sadece gerçek görevleri tanımla
-3. ATAMALAR VE ÖNCELİK SİRASİ (ALTIN KURAL):
+3. ATAMALAR VE ÖNCELİK SIRASI:
    - Önce görev başlığı
    - Sonra @kullanıcı atamaları (birden fazla olabilir)
    - En son öncelik kelimesi (Kritik, Yüksek, Normal, Düşük)
-   Örnek: GÖREV: Toplantı planlama @ziyaeyuboglu @infoalieweb3 Kritik
-4. KULLANICI ATAMALARI:
-   - Ziya için: @ziyaeyuboglu
-   - Berkay için: @infoalieweb3
-   - Tuncer için: @alkannakliyat
-5. ÖNCELİK KELİMELERİ (sadece bunları kullan):
-   - En yüksek: Kritik
-   - Yüksek: Yüksek
-   - Orta: Normal
-   - Düşük: Düşük
-6. Alt görevleri - ile başlat ve girintili yaz
-7. Açıklamaları görev satırından sonra girintili olarak ekle
-8. Her görev arasına boş satır koy
+4. Alt görevleri - ile başlat ve girintili yaz
+5. Açıklamaları görev satırından sonra girintili olarak ekle
+6. Her görev arasına boş satır koy
 
-ÖRNEK FORMAT:
-PROJE: Haftalık Büyüme Döngüsü @ziyaeyuboglu @infoalieweb3 @alkannakliyat Yüksek
-  Bu haftanın teması ve odak projeleri
-  - Tema belirleme
-  - Proje seçimi
+ÇIKTI:
+<TRELLO_PLAN>
+- İnsan-okunur planı ver
+</TRELLO_PLAN>
 
-GÖREV: Strateji Toplantısı @ziyaeyuboglu @infoalieweb3 Kritik
-  Haftalık strateji ve odak belirleme
-  - Geçen hafta değerlendirmesi
-  - Bu hafta hedefleri
-
-ARAŞTIRMA: Kite AI Analizi @ziyaeyuboglu Kritik
-  Projenin detaylı incelemesi
-  - Teknik analiz
-  - Pazar potansiyeli
+<TRELLO_JSON>
+- Sonunda GEÇERLİ JSON bloğu da ver (schema'ya uyan). Alanlar: tasks[].title, description, checklist[], labels[], assignees[], due (YYYY-MM-DD), listName; warnings[]
+</TRELLO_JSON>
 
 VERİLEN METİN:
 ${text}
-
-TÜRKÇE olarak, yukarıdaki formata uygun şekilde düzenle:`;
+`;
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const enhancedText = response.text();
-      
+      const model = this.client.getGenerativeModel({ model: this.modelName });
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+      });
+      const response = result?.response;
+      const txt = typeof response?.text === 'function' ? response.text() : (response?.candidates?.[0]?.content?.parts?.[0]?.text || '');
       console.log('✅ Gemini AI metin düzenlemesi tamamlandı');
-      return enhancedText;
+      return txt;
     } catch (error) {
       console.error('❌ Gemini AI hatası:', error.message);
       return this.fallbackProcessing(text);
+    }
+  }
+
+  /**
+   * Structured Output: JSON görev listesi döndür (schema kilitli)
+   */
+  async generateTasksWithSchema(text) {
+    if (!this.isConfigured) return null;
+
+    const schema = {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              description: { type: 'string' },
+              checklist: { type: 'array', items: { type: 'string' } },
+              labels: { type: 'array', items: { type: 'string', enum: ['kritik', 'yüksek', 'normal', 'düşük', 'görev', 'proje', 'araştırma'] } },
+              assignees: { type: 'array', items: { type: 'string' } },
+              due: { type: 'string' },
+              listName: { type: 'string' }
+            },
+            required: ['title']
+          }
+        },
+        warnings: { type: 'array', items: { type: 'string' } }
+      },
+      required: ['tasks', 'warnings']
+    };
+
+    const instruction = `
+Aşağıdaki metinden Trello için görevleri çıkar ve JSON döndür.
+Kurallar:
+- labels içinde öncelik sadece {kritik, yüksek, normal, düşük} olabilir.
+- kullanıcılar @handle biçiminde olmalıdır.
+- due tarihi YYYY-MM-DD formatında olmalıdır.
+- kararsız alanları warnings[] içine yaz.
+METİN:
+${text}
+`;
+
+    const tryModel = async (modelName) => {
+      const model = this.client.getGenerativeModel({ model: modelName });
+      const res = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: instruction }]}],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: schema,
+        },
+      });
+      const raw = typeof res?.response?.text === 'function' ? res.response.text() : (res?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+      return JSON.parse(raw);
+    };
+
+    try {
+      try {
+        return await tryModel(this.modelName);
+      } catch (err) {
+        // Fallback to flash-lite on rate/volume
+        console.warn('Gemini fallback to flash-lite:', err?.message);
+        return await tryModel('gemini-2.5-flash-lite');
+      }
+    } catch (error) {
+      console.error('❌ Structured output hatası:', error.message);
+      return null;
     }
   }
 

@@ -20,11 +20,39 @@ export class TextToTrello {
    */
   async processText(text, useAI = true) {
     console.log('📝 Metin analiz ediliyor...\n');
-    
+
+    // 1) First try structured JSON tasks via Gemini
+    if (useAI && this.geminiManager && this.geminiManager.isAvailable()) {
+      try {
+        const json = await this.geminiManager.generateTasksWithSchema(text);
+        if (json && Array.isArray(json.tasks) && json.tasks.length > 0) {
+          const results = [];
+          for (const t of json.tasks) {
+            const priority = (t.labels || []).find((l) => ['kritik', 'yüksek', 'normal', 'düşük'].includes(l));
+            const typeLabel = (t.labels || []).find((l) => ['görev', 'proje', 'araştırma'].includes(l));
+            const dueISO = t.due ? new Date(t.due).toISOString() : null;
+
+            const card = await this.trelloManager.createCard({
+              title: t.title,
+              description: t.description || '',
+              listName: t.listName || undefined,
+              assignees: Array.isArray(t.assignees) ? t.assignees : [],
+              labels: (t.labels || []).filter(Boolean),
+              dueDate: dueISO,
+              checklist: Array.isArray(t.checklist) ? t.checklist : [],
+            });
+            results.push({ success: true, card, item: { title: t.title, priority: priority || 'normal', type: typeLabel || 'görev' } });
+          }
+          return results;
+        }
+      } catch (e) {
+        console.warn('⚠️ Structured tasks üretilemedi, metin tabanlı işleme geçiliyor:', e?.message);
+      }
+    }
+
+    // 2) Fallback: Enhance text and parse as before
     let processedText = text;
-    
-    // Gemini AI her zaman aktif - metni düzenle
-    if (this.geminiManager && this.geminiManager.isAvailable()) {
+    if (useAI && this.geminiManager && this.geminiManager.isAvailable()) {
       console.log('🤖 Gemini AI ile metin düzenleniyor...');
       try {
         const enhancedText = await this.geminiManager.processAndEnhanceText(text);
@@ -41,7 +69,7 @@ export class TextToTrello {
     } else {
       console.log('⚠️ Gemini AI kullanılamıyor - manuel işleme yapılacak\n');
     }
-    
+
     // Projeleri, araştırmaları ve görevleri tanımla
     const items = this.extractItems(processedText);
     const results = [];

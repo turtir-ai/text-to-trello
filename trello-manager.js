@@ -1,5 +1,9 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+import Bottleneck from 'bottleneck';
+import { getBoardMembers, getBoardLabels } from './trello-metadata.js';
+import { mapAssigneesToIds, mapLabelsToIds } from './mapping-helpers.js';
+import { findPossibleDuplicate } from './dupe-guard.js';
 
 dotenv.config();
 
@@ -22,33 +26,62 @@ export class TrelloManager {
         token: this.token
       }
     };
+
+    // Rate limiters
+    this.generalLimiter = new Bottleneck({
+      reservoir: 90,
+      reservoirRefreshInterval: 10_000,
+      reservoirRefreshAmount: 90,
+      minTime: 120,
+    });
+    this.membersLimiter = new Bottleneck({
+      reservoir: 95,
+      reservoirRefreshInterval: 900_000,
+      reservoirRefreshAmount: 95,
+      minTime: 9_000,
+    });
     
     console.log('✅ Trello API bağlantısı hazır');
   }
 
   /**
-   * Trello API isteği yapar
+   * Trello API isteği yapar (Bottleneck ile oran-limit güvenliği)
    */
   async makeRequest(method, endpoint, data = {}) {
-    try {
-      const config = {
-        ...this.axiosConfig,
-        method: method.toLowerCase(),
-        url: endpoint
-      };
-
-      if (method.toLowerCase() === 'get') {
-        config.params = { ...config.params, ...data };
-      } else {
-        config.data = data;
-      }
-
-      const response = await axios(config);
-      return response.data;
-    } catch (error) {
-      console.error(`API İsteği Hatası: ${method} ${endpoint}`, error.response?.data || error.message);
-      throw new Error(error.response?.data?.message || error.message);
+    const config = {
+      ...this.axiosConfig,
+      method: method.toLowerCase(),
+      url: endpoint,
+    };
+    if (method.toLowerCase() === 'get') {
+      config.params = { ...config.params, ...data };
+    } else {
+      config.data = data;
     }
+
+    const limiter = endpoint.startsWith('/members') ? this.membersLimiter : this.generalLimiter;
+
+    // Retry on 429 with basic exponential backoff
+    let attempt = 0;
+    const maxAttempts = 3;
+    // schedule within limiter
+    const exec = async () => {
+      try {
+        const response = await axios(config);
+        return response.data;
+      } catch (error) {
+        const status = error?.response?.status;
+        if (status === 429 && attempt < maxAttempts) {
+          const delay = 500 * Math.pow(2, attempt);
+          attempt += 1;
+          await new Promise((r) => setTimeout(r, delay));
+          return exec();
+        }
+        console.error(`API İsteği Hatası: ${method} ${endpoint}`, error.response?.data || error.message);
+        throw new Error(error.response?.data?.message || error.message);
+      }
+    };
+    return limiter.schedule(exec);
   }
 
   /**
@@ -197,40 +230,107 @@ export class TrelloManager {
   async createCard(cardData) {
     try {
       const {
+        // Backward-compat fields
         name,
         description = '',
         listId,
         memberIds = [],
         labels = [],
-        dueDate = null
+        dueDate = null,
+        // Enhanced fields (optional)
+        title,
+        listName,
+        assignees = [], // ['@handle']
+        checklist = []
       } = cardData;
 
-      const cardParams = {
-        name,
-        desc: description,
-        idList: listId,
-        pos: 'top'
-      };
-
-      if (memberIds.length > 0) {
-        cardParams.idMembers = memberIds.join(',');
+      const finalTitle = title || name;
+      if (!finalTitle) {
+        throw new Error('Kart adı (title/name) gerekli');
       }
 
+      // Resolve target list
+      let targetListId = listId;
+      if (!targetListId) {
+        if (listName) {
+          const list = await this.findListByName(this.getDefaultBoardId(), listName);
+          targetListId = list?.id;
+        }
+        if (!targetListId) {
+          const boardInfo = await this.getBoardInfo(this.getDefaultBoardId());
+          targetListId = boardInfo.lists[0]?.id;
+        }
+      }
+      if (!targetListId) throw new Error('Hedef liste bulunamadı');
+
+      // Dupe guard by title + due date (day-level)
+      const possibleDupe = await findPossibleDuplicate({
+        boardId: this.getDefaultBoardId(),
+        title: finalTitle,
+        due: dueDate,
+        key: this.apiKey,
+        token: this.token,
+      });
+      if (possibleDupe?.isDuplicate) {
+        console.log(`↩️  Mevcut kart bulundu, yeniden oluşturulmadı: ${possibleDupe.url}`);
+        return possibleDupe;
+      }
+
+      // Map assignees and labels to IDs if not already provided
+      let idMembers = memberIds;
+      if ((!idMembers || idMembers.length === 0) && assignees && assignees.length > 0) {
+        const members = await getBoardMembers({
+          boardId: this.getDefaultBoardId(),
+          key: this.apiKey,
+          token: this.token,
+        });
+        idMembers = mapAssigneesToIds({ assignees, boardMembers: members });
+      }
+      let idLabels = [];
+      if (labels && labels.length > 0) {
+        const labelsMeta = await getBoardLabels({
+          boardId: this.getDefaultBoardId(),
+          key: this.apiKey,
+          token: this.token,
+        });
+        idLabels = mapLabelsToIds({ labels, boardLabels: labelsMeta });
+      }
+
+      const cardParams = {
+        name: finalTitle,
+        desc: description,
+        idList: targetListId,
+        pos: 'top',
+      };
+
+      if (idMembers && idMembers.length > 0) {
+        cardParams.idMembers = idMembers.join(',');
+      }
+      if (idLabels && idLabels.length > 0) {
+        cardParams.idLabels = idLabels.join(',');
+      }
       if (dueDate) {
         cardParams.due = dueDate;
       }
 
       const card = await this.makeRequest('POST', '/cards', cardParams);
-      
-      // Etiketleri ekle
-      if (labels.length > 0) {
+
+      // If we couldn't map labels to IDs, fallback to creating by name
+      if ((idLabels?.length || 0) === 0 && labels.length > 0) {
         for (const label of labels) {
           await this.addLabelToCard(card.id, label);
         }
       }
 
+      // Checklist items (each POST separately)
+      if (checklist && checklist.length > 0) {
+        const checklistResp = await this.makeRequest('POST', `/cards/${card.id}/checklists`, { name: 'Kontrol Listesi' });
+        for (const item of checklist) {
+          await this.makeRequest('POST', `/checklists/${checklistResp.id}/checkItems`, { name: item });
+        }
+      }
+
       console.log(`✅ Kart oluşturuldu: ${card.name} (ID: ${card.id})`);
-      
       return card;
     } catch (error) {
       console.error('Kart oluşturulurken hata:', error);

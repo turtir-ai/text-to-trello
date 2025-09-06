@@ -76,7 +76,7 @@ cp .env.example .env
 npm start
 ```
 
-Tarayıcınızda `http://localhost:3001` adresine gidin.
+Tarayıcınızda `http://localhost:3000` (veya MCP_SERVER_PORT) adresine gidin.
 
 ## 📖 Kullanım
 
@@ -230,3 +230,49 @@ Hata bulduysanız lütfen [Issues](https://github.com/turtir-ai/text-to-trello/i
   <p>⭐ Bu projeyi beğendiyseniz yıldız vermeyi unutmayın!</p>
   <p>Made with ❤️ by <a href="https://github.com/turtir-ai">Turtir AI</a></p>
 </div>
+
+---
+
+## 🧠 Yapılandırılmış Çıktı (Gemini)
+
+Gemini ile görevleri artık **şema kilitli JSON** olarak da üretebilirsiniz. Sistem önce JSON'u tüketir; JSON gelmezse insan-okur **<TRELLO_PLAN>** metni üzerinden devam eder.
+
+Örnek JSON (özet):
+
+```json path=null start=null
+{
+  "tasks": [
+    {
+      "title": "…",
+      "description": "…",
+      "checklist": ["…", "…"],
+      "labels": ["yüksek", "görev"],
+      "assignees": ["@ziyaeyuboglu"],
+      "due": "2025-09-10",
+      "listName": "Yapılacaklar"
+    }
+  ],
+  "warnings": []
+}
+```
+
+Notlar:
+- `labels` alanındaki öncelik enum: {kritik, yüksek, normal, düşük}
+- `assignees` kullanıcıları `@handle` biçiminde gelmelidir
+- `due` formatı: `YYYY-MM-DD`
+
+## 🔔 Webhook Kurulumu
+
+Sunucuya **HEAD /webhooks/trello → 200** ve **POST /webhooks/trello** eklendi. Webhook kurmak için:
+
+```bash path=null start=null
+# .env içinde BASE_URL ayarla (örn. http://localhost:3000)
+npm run webhook:create
+```
+
+Trello webhook oluştururken `callbackURL`'e HEAD atar; 200 dönmezse kurulmaz.
+
+## ♻️ Dupe Guard ve Checklist
+
+- Kart oluştururken aynı listede **aynı başlık + aynı gün due** varsa yeni kart açılmaz; mevcut URL döner.
+- Checklist maddeleri Trello API kısıtları gereği tek tek POST edilerek eklenir.

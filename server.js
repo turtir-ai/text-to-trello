@@ -263,6 +263,20 @@ async function handleSearchCards(args) {
 // OAuth route'larını kur
 oauthManager.setupRoutes(app);
 
+// Trello webhook verification and receiver
+app.head('/webhooks/trello', (req, res) => res.sendStatus(200));
+app.post('/webhooks/trello', express.json({ type: '*/*' }), async (req, res) => {
+  try {
+    const action = req.body?.action;
+    if (action?.type) {
+      console.log(`📬 Trello webhook: ${action.type}`);
+    }
+    res.sendStatus(200);
+  } catch (e) {
+    res.sendStatus(200);
+  }
+});
+
 // OAuth authentication middleware
 const requireAuth = (req, res, next) => oauthManager.requireAuth(req, res, next);
 
